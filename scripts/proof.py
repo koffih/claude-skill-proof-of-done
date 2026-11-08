@@ -21,6 +21,7 @@ Commands (run from the project root):
   proof.py block AC4 --reason TEXT    mark a criterion blocked on something outside
   proof.py waive AC5 --reason TEXT    waive a criterion (only on the user's word)
   proof.py verdict [--json]           print the ledger and the verdict, exit 0 only if DONE
+  proof.py lint [--strict] [--json]   flag proofs that could pass with the criterion false (never runs them)
   proof.py hook                       Stop hook: refuse to end on an unproven "done"
   proof.py hook --install [--shared]  add that hook to ./.claude/settings.local.json
 
@@ -241,6 +242,10 @@ def cmd_freeze(a):
                 elif before[cid] != after[cid]:
                     f.write(f"  - changed {cid}: {before[cid]['rung']} `{before[cid]['proof']}` -> {after[cid]['rung']} `{after[cid]['proof']}`\n")
     print(f"frozen:  {len(items)} criteria, sha {contract_sha()[:12]}" + (f" (reason logged in {LOG})" if old else ""))
+    findings = lint_findings(items)
+    if findings:
+        print(f"lint:    {len(findings)} weak proof(s), strengthen them now (adding criteria needs no reason):")
+        print_findings(findings, max([len(i["id"]) for i in items] + [2]))
     return 0
 
 
@@ -254,6 +259,74 @@ def suspect_flags(text):
     if BROKEN.search(text):
         flags.append("part of the tooling did not run (command or module not found)")
     return flags
+
+
+# ---------------------------------------------------------------- lint
+# Static review of the contract: signs that a proof could pass without the
+# criterion being true. Advisory, lexical, and it never executes a command.
+# Idea taken from unlazy's gate-lint (github.com/Leonxlnx/unlazy, MIT).
+
+CANNOT_FAIL_WHOLE = re.compile(r"^\s*(true|:|exit\s+0|(echo|printf)\b[^|&;]*)\s*$", re.I)
+CANNOT_FAIL_TAIL = re.compile(r"(\|\||;)\s*(true|:|exit\s+0|echo\b[^|&;]*)\s*$|--passWithNoTests\b", re.I)
+WEAK_WORDS = r"ok|okay|done|pass|passed|success|successful|succeeded|complete|completed|finished|yes|true|good|fine|working|0"
+WEAK_GREP = re.compile(r"\bgrep\b(?:\s+-[-\w=]+)*\s+(['\"]?)(?:" + WEAK_WORDS + r")\1(?=\s|$|\|)", re.I)
+NEGATION = re.compile(r"(^|&&|\|\||;|\()\s*!\s|\btest\s+!\s|\[\s+!\s")
+CURL = re.compile(r"\bcurl\b")
+CURL_FAILS = re.compile(r"\s-[a-zA-Z]*f[a-zA-Z]*\b|--fail\b|\|")
+NUMBER = re.compile(r"(?<![\w.])\d[\d.,]*(?!\s*px\b)(?![\d.,])")
+ACTIVITY = re.compile(
+    r"^(add(ed|s)?|implement(ed|s)?|wr(ite|ote|itten)|refactor(ed|s)?|update[ds]?|improve[ds]?|clean(ed)? ?up|"
+    r"handle[ds]?|support(ed|s)?|ensure[ds]?|make sure|try|attempt|investigate|review(ed)?|work(ed)? on|"
+    r"polish(ed)?|tid(y|ied)|address(ed)?|fix(ed|es)?|"
+    r"ajout(er|e|é|ée)?|impl[ée]ment(er|é|ée)?|[ée]cri(re|t)|refactor(er|is[ée])?|mettre [àa] jour|mis [àa] jour|"
+    r"am[ée]lior(er|é|ée)|nettoy(er|é)|g[ée]rer|s'assurer|essayer|corrig(er|é|ée)|revoir|travailler sur)\b",
+    re.I)
+
+
+def lint_findings(items):
+    """(id, rule, message) for every lexical sign of a weak proof."""
+    out = []
+    for it in items:
+        cid, cmd, text = it["id"], it["proof"], it["text"]
+        if it["kind"] == "run":
+            if CANNOT_FAIL_WHOLE.search(cmd) or CANNOT_FAIL_TAIL.search(cmd):
+                out.append((cid, "cannot-fail", f"`{cmd}` exits 0 whatever happens; use a command that fails when the criterion is false"))
+            if WEAK_GREP.search(cmd):
+                out.append((cid, "weak-match", "the grep looks for a word that failure output prints too; match a line only success can print"))
+            if NEGATION.search(cmd) and "&&" not in cmd:
+                out.append((cid, "absence-without-control", "an absence check also passes when the file or command is missing; "
+                            "chain a positive control first, e.g. `test -s FILE && ! grep -q X FILE`"))
+            if CURL.search(cmd) and not CURL_FAILS.search(cmd):
+                out.append((cid, "curl-no-fail", "curl exits 0 on a 404 or a 500; add -f or pipe the body to a check"))
+        elif NUMBER.search(text):
+            out.append((cid, "unmeasured-number", f"\"{text}\" states a number that only an eye checks; measure it with a run: command"))
+        if ACTIVITY.search(text.strip("`*_ ")):
+            out.append((cid, "activity-not-outcome", f"\"{text}\" names work done, not something a stranger can observe"))
+    runnable = sum(1 for i in items if i["kind"] == "run")
+    if len(items) >= 2 and runnable * 2 < len(items):
+        out.append(("-", "mostly-manual", f"{runnable}/{len(items)} criteria have a run: command; a mostly manual contract is prose with checkboxes"))
+    return out
+
+
+def print_findings(findings, w=4):
+    for cid, rule, msg in findings:
+        print(f"  {cid:<{w}}  {rule:<23} {msg}")
+
+
+def cmd_lint(a):
+    items, errors = parse_contract()
+    if errors:
+        print("the contract does not parse, fix it first:")
+        for e in errors:
+            print("  - " + e)
+        return 2
+    findings = lint_findings(items)
+    if a.json:
+        print(json.dumps({"warnings": [{"id": c, "rule": r, "message": m} for c, r, m in findings]}, ensure_ascii=False, indent=1))
+    else:
+        print_findings(findings, max([len(i["id"]) for i in items] + [2]))
+        print(f"LINT OK ({len(findings)} warning(s))" if findings else "LINT OK")
+    return 1 if a.strict and findings else 0
 
 
 def cmd_run(a):
@@ -494,13 +567,14 @@ def main():
     p = sub.add_parser("block"); p.add_argument("id"); p.add_argument("--reason", required=True)
     p = sub.add_parser("waive"); p.add_argument("id"); p.add_argument("--reason", required=True)
     p = sub.add_parser("verdict"); p.add_argument("--json", action="store_true")
+    p = sub.add_parser("lint"); p.add_argument("--strict", action="store_true"); p.add_argument("--json", action="store_true")
     p = sub.add_parser("hook"); p.add_argument("--install", action="store_true"); p.add_argument("--shared", action="store_true")
     a = ap.parse_args()
     if a.cmd == "run" and not a.ids and not a.all:
         ap.error("run needs criterion ids or --all")
     fn = {"init": cmd_init, "freeze": cmd_freeze, "run": cmd_run, "attach": cmd_attach,
           "block": lambda x: cmd_mark(x, "blocked"), "waive": lambda x: cmd_mark(x, "waived"),
-          "verdict": cmd_verdict, "hook": cmd_hook}[a.cmd]
+          "verdict": cmd_verdict, "lint": cmd_lint, "hook": cmd_hook}[a.cmd]
     sys.exit(fn(a) or 0)
 
 

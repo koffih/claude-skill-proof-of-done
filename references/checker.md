@@ -11,7 +11,7 @@ The engine: P="python3 [ABSOLUTE PATH TO proof.py]"  (run every command from the
 1. Read .proof/acceptance.md (the contract) and .proof/contract-log.md if it exists.
    If a criterion was removed, lowered in rung, or given an easier command after the first freeze,
    and the log does not quote the user agreeing, REJECT.
-2. For each criterion, judge the proof itself before running it: does the command exit non-zero when
+2. Run `$P lint` and treat each warning as a question to answer. Then, for each criterion, judge the proof itself before running it: does the command exit non-zero when
    the criterion is false? A command that cannot fail (true, echo, curl without -f, `|| true`, a test
    with no assertion, a test that mocks the very thing it claims to test) is a REJECT for that criterion.
    Open the test files named by the commands and read their assertions.

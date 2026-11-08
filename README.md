@@ -12,7 +12,7 @@ The verdict is computed, never written by hand.
 
 ## How it works
 
-1. **Contract before code.** `.proof/acceptance.md` lists what someone must be able to observe, each with the strength of proof it needs (static, unit, integration, e2e, runtime, visual, manual) and the exact command that proves it. `freeze` locks it: weakening a criterion later is logged and needs the user's agreement.
+1. **Contract before code.** `.proof/acceptance.md` lists what someone must be able to observe, each with the strength of proof it needs (static, unit, integration, e2e, runtime, visual, manual) and the exact command that proves it. `lint` flags proofs that could pass while the criterion is false (a command that cannot fail, a grep for `ok`, an absence check with no positive control, `curl` without `-f`, a criterion that names work done instead of an outcome), without running anything. `freeze` locks it: weakening a criterion later is logged and needs the user's agreement.
 2. **Receipts, not prose.** `proof.py run AC2` runs the contract's own command and writes a receipt: exit code, output tail, and a fingerprint of the working tree. Screenshots and other evidence are attached as files and copied aside.
 3. **Freshness is mechanical.** Edit one line after the tests ran, and every receipt goes `STALE`. Run a different command than the contract says: `MISMATCH`. Exit 0 with zero tests, only skips, a missing tool, or a proof that edits the tree: `SUSPECT`.
 4. **Maker and checker are separate.** An independent subagent re-reads the contract, re-runs the proofs, looks at the screenshots and reads the diff for skipped tests, loosened assertions or scope creep. It answers ACCEPT or REJECT.
@@ -55,6 +55,7 @@ The engine, by hand:
 ```bash
 P="python3 ~/.claude/skills/proof-of-done/scripts/proof.py"
 $P init                     # write .proof/acceptance.md
+$P lint                     # flag weak proofs (runs nothing)
 $P freeze                   # lock the contract
 $P run --all                # fresh receipts
 $P attach AC5 shot.png --note "inbox at 390px"

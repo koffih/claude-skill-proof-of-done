@@ -113,6 +113,51 @@ out="$(printf '{"cwd":"%s"}' "$E" | $P hook)"; expect "hook is silent where ther
 python3 -c "import json;d=json.load(open('$E/.claude/settings.local.json'));assert len(d['hooks']['Stop'])==1" && ok "hook install writes valid settings" || bad "settings broken"
 rm -rf "$E"
 
+# lint: weak proofs are flagged, and nothing is ever executed
+L="$(mktemp -d)"; cd "$L"
+$P init >/dev/null
+cat > .proof/acceptance.md <<'EOF'
+# c
+## Criteria
+- AC1 :: the report lists every school :: unit :: run: true
+- AC2 :: the export has rows :: unit :: run: pytest tests/test_export.py || true
+- AC3 :: the job logs success :: runtime :: run: journalctl -u job | grep -q success
+- AC4 :: no secret is left in the bundle :: static :: run: ! grep -q API_KEY dist/app.js
+- AC5 :: the API answers :: runtime :: run: curl -s https://example.com/api/health
+- AC6 :: the table shows 120 schools :: visual :: see: screenshot of the table
+- AC7 :: added a retry to the importer :: unit :: run: pytest tests/test_import.py -q
+- AC8 :: ajouter le bouton de partage :: visual :: see: capture de la page
+- AC9 :: nothing is ever run by lint :: unit :: run: touch created-by-lint.txt
+EOF
+out="$($P lint)"; code=$?
+for pair in AC1:cannot-fail AC2:cannot-fail AC3:weak-match AC4:absence-without-control AC5:curl-no-fail \
+            AC6:unmeasured-number AC7:activity-not-outcome AC8:activity-not-outcome; do
+  id="${pair%%:*}"; rule="${pair#*:}"
+  echo "$out" | grep -qE "^  $id +$rule " && ok "lint flags $rule on $id" || bad "lint missed $rule on $id" "$out"
+done
+echo "$out" | grep -qE "^  AC9 " && bad "lint flagged a sound criterion (AC9)" "$out" || ok "lint leaves a sound run: line alone"
+[ -e created-by-lint.txt ] && bad "lint never executes a command" || ok "lint never executes a command"
+expect "plain lint exits 0 with warnings" "$code" "0"
+$P lint --strict >/dev/null; expect "lint --strict fails on a warning" "$?" "1"
+$P lint --json | python3 -c "import json,sys;d=json.load(sys.stdin);assert len(d['warnings'])>=8" && ok "lint --json lists the warnings" || bad "lint --json broken"
+printf '# c\n## Criteria\n- AC1 :: x :: visual :: see: a\n- AC2 :: y :: visual :: see: b\n- AC3 :: z :: unit :: run: pytest -q\n' > .proof/acceptance.md
+$P lint | grep -q "mostly-manual" && ok "lint flags a mostly manual contract" || bad "lint missed mostly-manual"
+cat > .proof/acceptance.md <<'EOF'
+# c
+## Criteria
+- AC1 :: the export holds one row per school :: integration :: run: pytest tests/test_export.py -q
+- AC2 :: no secret is left in the bundle :: static :: run: test -s dist/app.js && ! grep -q API_KEY dist/app.js
+- AC3 :: the API answers with version 1.4.0 :: runtime :: run: curl -fsS https://example.com/api/health | grep -q '"version":"1.4.0"'
+- AC4 :: the inbox at 390 px shows the new task :: visual :: see: screenshot
+EOF
+expect "a sound contract lints clean" "$($P lint)" "LINT OK"
+$P lint --strict >/dev/null; expect "lint --strict passes a clean contract" "$?" "0"
+printf '# c\n## Criteria\n- AC1 :: the page loads :: runtime :: run: curl -s http://localhost:3000\n' > .proof/acceptance.md
+out="$($P freeze)"; code=$?
+if [ "$code" = 0 ] && echo "$out" | grep -q "^frozen:" && echo "$out" | grep -q "curl-no-fail"; then
+  ok "freeze shows lint warnings and still freezes"; else bad "freeze shows lint warnings and still freezes" "$out"; fi
+cd /; rm -rf "$L"
+
 # without git
 N="$(mktemp -d)"; cd "$N"
 echo a > f.txt; $P init >/dev/null
