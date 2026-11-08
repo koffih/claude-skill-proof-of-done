@@ -149,6 +149,13 @@ cat > .proof/acceptance.md <<'EOF'
 - AC2 :: no secret is left in the bundle :: static :: run: test -s dist/app.js && ! grep -q API_KEY dist/app.js
 - AC3 :: the API answers with version 1.4.0 :: runtime :: run: curl -fsS https://example.com/api/health | grep -q '"version":"1.4.0"'
 - AC4 :: the inbox at 390 px shows the new task :: visual :: see: screenshot
+- AC5 :: support tickets appear in the inbox :: e2e :: run: npx playwright test inbox.spec.ts
+- AC6 :: updates are saved :: unit :: run: pytest -q
+- AC7 :: Review comments appear under the post :: e2e :: run: npx playwright test review.spec.ts
+- AC8 :: Handled errors show a message :: unit :: run: npm test
+- AC9 :: la page d'accueil passe le contraste WCAG 2.1 :: visual :: see: capture
+- AC10 :: l'utilisateur voit la tâche :: e2e :: run: npx playwright test tache.spec.ts
+- AC11 :: the API answers HTTP 200 on version 1.4 :: runtime :: run: curl -fsS https://example.com/api/health
 EOF
 expect "a sound contract lints clean" "$($P lint)" "LINT OK"
 $P lint --strict >/dev/null; expect "lint --strict passes a clean contract" "$?" "0"

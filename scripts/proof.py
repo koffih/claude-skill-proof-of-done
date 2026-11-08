@@ -274,6 +274,14 @@ NEGATION = re.compile(r"(^|&&|\|\||;|\()\s*!\s|\btest\s+!\s|\[\s+!\s")
 CURL = re.compile(r"\bcurl\b")
 CURL_FAILS = re.compile(r"\s-[a-zA-Z]*f[a-zA-Z]*\b|--fail\b|\|")
 NUMBER = re.compile(r"(?<![\w.])\d[\d.,]*(?!\s*px\b)(?![\d.,])")
+# A version or standard ("WCAG 2.1", "HTTP 404", "v2", "version 1.4") is a name, not a measurement.
+NAMED_NUMBER = re.compile(r"(\b[A-Z]{2,}\s+|\b[vV]|\b[Vv]ersion\s+)\d[\d.]*")
+# A sentence that says what someone observes is an outcome even if it opens on a word like "updates" or "support".
+OBSERVES = re.compile(
+    r"\b(is|are|was|were|be|appears?|shows?|loads?|displays?|returns?|sees?|gets?|exists?|works?|passes|contains?|"
+    r"has|have|stays?|remains?|renders?|lists?|holds?|can|cannot|gives?|prints?|exits?|responds?|answers?|receives?|"
+    r"est|sont|voit|voient|affiche(nt)?|appara[iî]t|appara[iî]ssent|renvoie(nt)?|reste(nt)?|contient|ont|peut|peuvent|"
+    r"charge|fonctionne|marche|re[çc]oit|existe)\b", re.I)
 ACTIVITY = re.compile(
     r"^(add(ed|s)?|implement(ed|s)?|wr(ite|ote|itten)|refactor(ed|s)?|update[ds]?|improve[ds]?|clean(ed)? ?up|"
     r"handle[ds]?|support(ed|s)?|ensure[ds]?|make sure|try|attempt|investigate|review(ed)?|work(ed)? on|"
@@ -298,9 +306,9 @@ def lint_findings(items):
                             "chain a positive control first, e.g. `test -s FILE && ! grep -q X FILE`"))
             if CURL.search(cmd) and not CURL_FAILS.search(cmd):
                 out.append((cid, "curl-no-fail", "curl exits 0 on a 404 or a 500; add -f or pipe the body to a check"))
-        elif NUMBER.search(text):
+        elif NUMBER.search(NAMED_NUMBER.sub("", text)):
             out.append((cid, "unmeasured-number", f"\"{text}\" states a number that only an eye checks; measure it with a run: command"))
-        if ACTIVITY.search(text.strip("`*_ ")):
+        if ACTIVITY.search(text.strip("`*_ ")) and not OBSERVES.search(text):
             out.append((cid, "activity-not-outcome", f"\"{text}\" names work done, not something a stranger can observe"))
     runnable = sum(1 for i in items if i["kind"] == "run")
     if len(items) >= 2 and runnable * 2 < len(items):
