@@ -271,11 +271,15 @@ CANNOT_FAIL_TAIL = re.compile(r"(\|\||;)\s*(true|:|exit\s+0|echo\b[^|&;]*)\s*$|-
 WEAK_WORDS = r"ok|okay|done|pass|passed|success|successful|succeeded|complete|completed|finished|yes|true|good|fine|working|0"
 WEAK_GREP = re.compile(r"\bgrep\b(?:\s+-[-\w=]+)*\s+(['\"]?)(?:" + WEAK_WORDS + r")\1(?=\s|$|\|)", re.I)
 NEGATION = re.compile(r"(^|&&|\|\||;|\()\s*!\s|\btest\s+!\s|\[\s+!\s")
+# `test ! -e FILE` proves a deletion by itself; only a negated search needs a positive control.
+FILE_ABSENT = re.compile(r"(\btest|\[)\s+!\s+-[efdLs]\s")
+PIPE_HIDES_EXIT = re.compile(r"\|\s*(tee|head|tail|cat|less|more|sort|uniq)\b")
 CURL = re.compile(r"\bcurl\b")
-CURL_FAILS = re.compile(r"\s-[a-zA-Z]*f[a-zA-Z]*\b|--fail\b|\|")
+CURL_FAILS = re.compile(r"\s-[a-zA-Z]*f[a-zA-Z]*\b|--fail\b|\||\s-w\s|--write-out\b|http_code")
 NUMBER = re.compile(r"(?<![\w.])\d[\d.,]*(?!\s*px\b)(?![\d.,])")
-# A version, product or step ("WCAG 2.1", "iOS 17", "Node 20", "v2", "step 2") is a name, not a measurement.
-NAMED_NUMBER = re.compile(r"(\b\w*[A-Z]\w*\s+|\b[vV]|\b(?i:version|step|page|level|chapter|[ée]tape|niveau|chapitre)\s+)\d[\d.]*")
+# A version, product, step, viewport, colour or screen size ("WCAG 2.1", "iOS 17", "step 2", "1440x900",
+# "#1A2B3C", "13 pouces") is a name, not a measurement. A capitalised word opening the sentence is not a name.
+NAMED_NUMBER = re.compile(r"\d+\s*[x×]\s*\d+|#[0-9a-fA-F]{3,8}\b|\d+\s*(pouces?|inch(es)?|in\b|\")|((?<=[\s(,/])\w*[A-Z]\w*\s+|\b[vV]|\b(?i:version|step|page|level|chapter|[ée]tape|niveau|chapitre)\s+)\d[\d.]*")
 # A sentence that says what someone observes is an outcome even if it opens on a word like "updates" or "support".
 OBSERVES = re.compile(
     r"\b(is|are|was|were|be|appears?|shows?|loads?|displays?|returns?|sees?|gets?|exists?|works?|passes|contains?|"
@@ -301,9 +305,11 @@ def lint_findings(items):
                 out.append((cid, "cannot-fail", f"`{cmd}` exits 0 whatever happens; use a command that fails when the criterion is false"))
             if WEAK_GREP.search(cmd):
                 out.append((cid, "weak-match", "the grep looks for a word that failure output prints too; match a line only success can print"))
-            if NEGATION.search(cmd) and "&&" not in re.sub(r"^\s*cd\s+\S+\s*&&", "", cmd):
+            if NEGATION.search(FILE_ABSENT.sub("", cmd)) and "&&" not in re.sub(r"^\s*cd\s+\S+\s*&&", "", cmd):
                 out.append((cid, "absence-without-control", "an absence check also passes when the file or command is missing; "
                             "chain a positive control first, e.g. `test -s FILE && ! grep -q X FILE`"))
+            if PIPE_HIDES_EXIT.search(cmd) and "pipefail" not in cmd:
+                out.append((cid, "pipe-hides-exit", "the last command of the pipe decides the exit code, so a failing test still exits 0; add `set -o pipefail;` or drop the pipe"))
             if CURL.search(cmd) and not CURL_FAILS.search(cmd):
                 out.append((cid, "curl-no-fail", "curl exits 0 on a 404 or a 500; add -f or pipe the body to a check"))
         elif NUMBER.search(NAMED_NUMBER.sub("", text)):
