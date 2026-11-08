@@ -274,8 +274,8 @@ NEGATION = re.compile(r"(^|&&|\|\||;|\()\s*!\s|\btest\s+!\s|\[\s+!\s")
 CURL = re.compile(r"\bcurl\b")
 CURL_FAILS = re.compile(r"\s-[a-zA-Z]*f[a-zA-Z]*\b|--fail\b|\|")
 NUMBER = re.compile(r"(?<![\w.])\d[\d.,]*(?!\s*px\b)(?![\d.,])")
-# A version or standard ("WCAG 2.1", "HTTP 404", "v2", "version 1.4") is a name, not a measurement.
-NAMED_NUMBER = re.compile(r"(\b[A-Z]{2,}\s+|\b[vV]|\b[Vv]ersion\s+)\d[\d.]*")
+# A version, product or step ("WCAG 2.1", "iOS 17", "Node 20", "v2", "step 2") is a name, not a measurement.
+NAMED_NUMBER = re.compile(r"(\b\w*[A-Z]\w*\s+|\b[vV]|\b(?i:version|step|page|level|chapter|[ée]tape|niveau|chapitre)\s+)\d[\d.]*")
 # A sentence that says what someone observes is an outcome even if it opens on a word like "updates" or "support".
 OBSERVES = re.compile(
     r"\b(is|are|was|were|be|appears?|shows?|loads?|displays?|returns?|sees?|gets?|exists?|works?|passes|contains?|"
@@ -301,7 +301,7 @@ def lint_findings(items):
                 out.append((cid, "cannot-fail", f"`{cmd}` exits 0 whatever happens; use a command that fails when the criterion is false"))
             if WEAK_GREP.search(cmd):
                 out.append((cid, "weak-match", "the grep looks for a word that failure output prints too; match a line only success can print"))
-            if NEGATION.search(cmd) and "&&" not in cmd:
+            if NEGATION.search(cmd) and "&&" not in re.sub(r"^\s*cd\s+\S+\s*&&", "", cmd):
                 out.append((cid, "absence-without-control", "an absence check also passes when the file or command is missing; "
                             "chain a positive control first, e.g. `test -s FILE && ! grep -q X FILE`"))
             if CURL.search(cmd) and not CURL_FAILS.search(cmd):

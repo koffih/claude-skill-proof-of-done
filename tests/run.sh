@@ -128,9 +128,10 @@ cat > .proof/acceptance.md <<'EOF'
 - AC7 :: added a retry to the importer :: unit :: run: pytest tests/test_import.py -q
 - AC8 :: ajouter le bouton de partage :: visual :: see: capture de la page
 - AC9 :: nothing is ever run by lint :: unit :: run: touch created-by-lint.txt
+- AC10 :: no TODO is left in the app :: static :: run: cd app && ! grep -q TODO main.py
 EOF
 out="$($P lint)"; code=$?
-for pair in AC1:cannot-fail AC2:cannot-fail AC3:weak-match AC4:absence-without-control AC5:curl-no-fail \
+for pair in AC10:absence-without-control AC1:cannot-fail AC2:cannot-fail AC3:weak-match AC4:absence-without-control AC5:curl-no-fail \
             AC6:unmeasured-number AC7:activity-not-outcome AC8:activity-not-outcome; do
   id="${pair%%:*}"; rule="${pair#*:}"
   echo "$out" | grep -qE "^  $id +$rule " && ok "lint flags $rule on $id" || bad "lint missed $rule on $id" "$out"
@@ -156,6 +157,9 @@ cat > .proof/acceptance.md <<'EOF'
 - AC9 :: la page d'accueil passe le contraste WCAG 2.1 :: visual :: see: capture
 - AC10 :: l'utilisateur voit la tâche :: e2e :: run: npx playwright test tache.spec.ts
 - AC11 :: the API answers HTTP 200 on version 1.4 :: runtime :: run: curl -fsS https://example.com/api/health
+- AC12 :: the page renders on iOS 17 Safari and Chrome 120 :: visual :: see: two screenshots
+- AC13 :: the step 2 form shows the address on Node 20 :: visual :: see: capture
+- AC14 :: l'étape 3 affiche le récapitulatif sur iPhone 15 :: visual :: see: capture
 EOF
 expect "a sound contract lints clean" "$($P lint)" "LINT OK"
 $P lint --strict >/dev/null; expect "lint --strict passes a clean contract" "$?" "0"
