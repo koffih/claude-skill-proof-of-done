@@ -8,7 +8,7 @@ W="$(mktemp -d)"
 trap 'rm -rf "$W" "${S:-}"' EXIT
 pass=0; fail=0
 ok()   { pass=$((pass+1)); echo "ok    $1"; }
-bad()  { fail=$((fail+1)); echo "FAIL  $1"; [ -n "${2:-}" ] && echo "$2" | sed 's/^/      /'; }
+bad()  { fail=$((fail+1)); echo "FAIL  $1"; if [ -n "${2:-}" ]; then echo "$2" | sed 's/^/      /'; fi; }
 state(){ $P verdict --json | python3 -c "import json,sys;d=json.load(sys.stdin);print({c['id']:c['state'] for c in d['criteria']}.get('$1'))"; }
 verdict(){ $P verdict --json | python3 -c "import json,sys;print(json.load(sys.stdin)['verdict'])"; }
 expect(){ # label, actual, wanted
@@ -135,8 +135,8 @@ for pair in AC1:cannot-fail AC2:cannot-fail AC3:weak-match AC4:absence-without-c
   id="${pair%%:*}"; rule="${pair#*:}"
   echo "$out" | grep -qE "^  $id +$rule " && ok "lint flags $rule on $id" || bad "lint missed $rule on $id" "$out"
 done
-echo "$out" | grep -qE "^  AC9 " && bad "lint flagged a sound criterion (AC9)" "$out" || ok "lint leaves a sound run: line alone"
-[ -e created-by-lint.txt ] && bad "lint never executes a command" || ok "lint never executes a command"
+if echo "$out" | grep -qE "^  AC9 "; then bad "lint leaves a sound run: line alone" "$out"; else ok "lint leaves a sound run: line alone"; fi
+if [ -e created-by-lint.txt ]; then bad "lint never executes a command"; else ok "lint never executes a command"; fi
 expect "plain lint exits 0 with warnings" "$code" "0"
 $P lint --strict >/dev/null; expect "lint --strict fails on a warning" "$?" "1"
 $P lint --json | python3 -c "import json,sys;d=json.load(sys.stdin);assert len(d['warnings'])>=8" && ok "lint --json lists the warnings" || bad "lint --json broken"
